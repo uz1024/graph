@@ -1,1 +1,562 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Симулятор Раскраски Графов</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=Inter:wght@400;600&display=swap" rel="stylesheet">
+    
+    <style>
+        body {
+            background-color: #0f172a; /* bg-slate-900 */
+            color: #f8fafc; /* text-slate-50 */
+            font-family: 'Inter', sans-serif;
+            margin: 0;
+            padding: 0;
+            overflow: hidden; /* Запрет прокрутки для полноэкранного режима */
+            user-select: none;
+            -webkit-user-select: none;
+            touch-action: none;
+        }
 
+        .font-display {
+            font-family: 'Orbitron', sans-serif;
+        }
+
+        .glow-text {
+            text-shadow: 0 0 5px currentColor, 0 0 15px currentColor;
+        }
+
+        /* Анимация кнопки цвета при выборе */
+        .color-btn {
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            border: 3px solid transparent;
+        }
+
+        .color-btn:hover {
+            transform: scale(1.1);
+        }
+
+        .color-btn.selected {
+            border-color: #ffffff;
+            transform: scale(1.2);
+            box-shadow: 0 0 15px currentColor;
+        }
+
+        /* Анимация пульсации для важных элементов */
+        @keyframes pulse-glow {
+            0%, 100% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(1.05); opacity: 0.8; }
+        }
+        .animate-pulse-glow {
+            animation: pulse-glow 2s infinite;
+        }
+    </style>
+</head>
+<body class="flex flex-col w-screen h-screen">
+
+    <header class="w-full bg-slate-800 border-b border-slate-700 shadow-lg z-20 flex-shrink-0">
+        <div class="px-4 py-3 flex flex-wrap justify-between items-center gap-4">
+            
+            <div class="flex items-center gap-3">
+                <h1 class="text-2xl font-bold font-display text-cyan-400 glow-text tracking-wider">ХромаГраф</h1>
+                <span class="hidden md:inline-block text-xs text-slate-400 max-w-xs">
+                    Закрасьте узлы так, чтобы соединенные узлы были разного цвета.
+                </span>
+            </div>
+
+            <div class="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm sm:text-base font-semibold">
+                <div class="flex flex-col items-center">
+                    <span class="text-[10px] sm:text-xs text-slate-400 uppercase tracking-wide">Уровень</span>
+                    <span id="ui-level" class="text-yellow-400 text-lg sm:text-xl glow-text font-display">1</span>
+                </div>
+                <div class="flex flex-col items-center">
+                    <span class="text-[10px] sm:text-xs text-slate-400 uppercase tracking-wide">Очки</span>
+                    <span id="ui-score" class="text-green-400 text-lg sm:text-xl glow-text font-display">0</span>
+                </div>
+                <div class="flex flex-col items-center">
+                    <span class="text-[10px] sm:text-xs text-slate-400 uppercase tracking-wide">Время</span>
+                    <span id="ui-time" class="text-white text-lg sm:text-xl font-mono">00:00</span>
+                </div>
+                <div class="flex flex-col items-center">
+                    <span class="text-[10px] sm:text-xs text-slate-400 uppercase tracking-wide">Шаги</span>
+                    <span id="ui-clicks" class="text-white text-lg sm:text-xl font-mono">0</span>
+                </div>
+            </div>
+
+        </div>
+    </header>
+
+    <main class="relative flex-grow w-full overflow-hidden bg-slate-900" id="canvas-container">
+        
+        <!-- Холст для графа -->
+        <canvas id="game-canvas" class="block w-full h-full absolute inset-0"></canvas>
+
+        <div class="absolute bottom-6 sm:bottom-8 left-1/2 transform -translate-x-1/2 z-20 pointer-events-auto">
+            <div class="bg-slate-800/90 backdrop-blur-md p-3 sm:p-4 rounded-3xl flex gap-2 sm:gap-4 border border-slate-700 shadow-[0_10px_40px_rgba(0,0,0,0.5)] w-max items-center justify-center" id="color-palette">
+                <!-- Кнопки цветов будут сгенерированы через JS -->
+            </div>
+        </div>
+
+    </main>
+
+    <div id="success-overlay" class="hidden absolute inset-0 z-50 bg-black/85 backdrop-blur-sm flex-col items-center justify-center">
+        <h2 class="text-4xl md:text-6xl font-bold font-display text-green-400 mb-6 glow-text animate-pulse-glow text-center px-4">УРОВЕНЬ ПРОЙДЕН!</h2>
+        
+        <div class="bg-slate-800 border-2 border-green-500 rounded-2xl p-6 md:p-10 text-center max-w-md w-[90%] shadow-[0_0_50px_rgba(34,197,94,0.3)]">
+            <p class="text-xl text-slate-200 mb-8 font-medium">Граф успешно раскрашен без конфликтов!</p>
+            
+            <div class="grid grid-cols-2 gap-y-4 gap-x-8 text-sm sm:text-base mb-10 text-left text-slate-300">
+                <span class="flex items-center">Бонус за время:</span>
+                <span id="stat-time-bonus" class="text-right font-bold text-white font-mono text-lg">0</span>
+                
+                <span class="flex items-center">Бонус за шаги:</span>
+                <span id="stat-click-bonus" class="text-right font-bold text-white font-mono text-lg">0</span>
+                
+                <div class="col-span-2 border-t border-slate-600 my-1"></div>
+                
+                <span class="text-xl text-yellow-400 font-bold flex items-center">Итого за уровень:</span>
+                <span id="stat-level-score" class="text-xl text-right font-bold text-yellow-400 font-display glow-text">0</span>
+            </div>
+
+            <button id="btn-next-level" class="w-full py-4 bg-green-500 text-slate-950 font-bold text-lg rounded-xl hover:bg-green-400 hover:shadow-[0_0_25px_rgba(34,197,94,0.8)] transition-all uppercase tracking-widest">
+                Следующий уровень
+            </button>
+        </div>
+    </div>
+
+    <script>
+        // Фиксированная палитра из 8 ярких цветов
+        const PALETTE = [
+            '#ef4444', // Красный (Red)
+            '#3b82f6', // Синий (Blue)
+            '#22c55e', // Зеленый (Green)
+            '#eab308', // Желтый (Yellow)
+            '#a855f7', // Фиолетовый (Purple)
+            '#06b6d4', // Голубой (Cyan)
+            '#ec4899', // Розовый (Pink)
+            '#f97316'  // Оранжевый (Orange)
+        ];
+
+        // Глобальное состояние игры
+        const STATE = {
+            level: 1,
+            score: 0,
+            nodes: [],
+            edges: [],
+            selectedColor: PALETTE[0],
+            timeStart: 0,
+            clicks: 0,
+            isPlaying: false,
+            draggedNode: null
+        };
+
+        // DOM элементы
+        const canvasContainer = document.getElementById('canvas-container');
+        const canvas = document.getElementById('game-canvas');
+        const ctx = canvas.getContext('2d');
+        const paletteContainer = document.getElementById('color-palette');
+        const uiLevel = document.getElementById('ui-level');
+        const uiScore = document.getElementById('ui-score');
+        const uiTime = document.getElementById('ui-time');
+        const uiClicks = document.getElementById('ui-clicks');
+        const successOverlay = document.getElementById('success-overlay');
+        const btnNextLevel = document.getElementById('btn-next-level');
+
+        // Физические константы
+        const NODE_RADIUS = window.innerWidth < 640 ? 20 : 26;
+        const SPRING_LENGTH = window.innerWidth < 640 ? 110 : 160;
+        const REPULSION_STRENGTH = window.innerWidth < 640 ? 5000 : 10000;
+        const SPRING_STRENGTH = 0.03;
+        const CENTER_GRAVITY = 0.01;
+        const DAMPING = 0.85;
+
+        function resizeCanvas() {
+            // Подстраиваем холст строго под размер родительского контейнера (main)
+            canvas.width = canvasContainer.clientWidth;
+            canvas.height = canvasContainer.clientHeight;
+        }
+        window.addEventListener('resize', resizeCanvas);
+
+        function setupPalette() {
+            paletteContainer.innerHTML = '';
+            PALETTE.forEach(color => {
+                const btn = document.createElement('button');
+                btn.className = `color-btn w-10 h-10 sm:w-12 sm:h-12 rounded-full cursor-pointer flex-shrink-0`;
+                btn.style.backgroundColor = color;
+                btn.style.color = color;
+                
+                if (color === STATE.selectedColor) btn.classList.add('selected');
+                
+                btn.addEventListener('click', () => {
+                    STATE.selectedColor = color;
+                    updatePaletteSelection();
+                });
+                paletteContainer.appendChild(btn);
+            });
+        }
+
+        function updatePaletteSelection() {
+            const btns = paletteContainer.children;
+            for (let i = 0; i < btns.length; i++) {
+                if (PALETTE[i] === STATE.selectedColor) {
+                    btns[i].classList.add('selected');
+                } else {
+                    btns[i].classList.remove('selected');
+                }
+            }
+        }
+
+        function generateGraph(level) {
+            // Увеличиваем количество узлов и связей с уровнем
+            const numNodes = Math.min(4 + Math.floor((level - 1) * 0.7), 16); 
+            STATE.nodes = [];
+            STATE.edges = [];
+            
+            const cx = canvas.width / 2;
+            const cy = canvas.height / 2;
+            
+            // Создание узлов (помещаем ближе к центру, чтобы физика их раскидала)
+            for (let i = 0; i < numNodes; i++) {
+                STATE.nodes.push({
+                    id: i,
+                    x: cx + (Math.random() - 0.5) * 150,
+                    y: cy + (Math.random() - 0.5) * 150,
+                    vx: 0,
+                    vy: 0,
+                    color: null // Изначально пустой цвет
+                });
+            }
+
+            // Матрица смежности для избежания дубликатов
+            const adjMatrix = Array(numNodes).fill(null).map(() => Array(numNodes).fill(0));
+            
+            function addEdge(u, v) {
+                if (u !== v && adjMatrix[u][v] === 0) {
+                    STATE.edges.push({ u: u, v: v });
+                    adjMatrix[u][v] = 1;
+                    adjMatrix[v][u] = 1;
+                }
+            }
+
+            // Создаем остовное дерево, чтобы граф был связным
+            for (let i = 1; i < numNodes; i++) {
+                const target = Math.floor(Math.random() * i);
+                addEdge(i, target);
+            }
+
+            // Добавляем случайные ребра для сложности
+            const extraEdges = Math.floor(level * 1.5);
+            let added = 0;
+            let attempts = 0;
+            while(added < extraEdges && attempts < 100) {
+                const u = Math.floor(Math.random() * numNodes);
+                const v = Math.floor(Math.random() * numNodes);
+                if (u !== v && adjMatrix[u][v] === 0) {
+                    addEdge(u, v);
+                    added++;
+                }
+                attempts++;
+            }
+        }
+
+        function updatePhysics() {
+            for (let i = 0; i < STATE.nodes.length; i++) {
+                const nodeA = STATE.nodes[i];
+                
+                // 1. Отталкивание всех узлов друг от друга
+                for (let j = i + 1; j < STATE.nodes.length; j++) {
+                    const nodeB = STATE.nodes[j];
+                    const dx = nodeA.x - nodeB.x;
+                    const dy = nodeA.y - nodeB.y;
+                    let dist = Math.sqrt(dx*dx + dy*dy);
+                    if (dist < 1) dist = 1; 
+                    
+                    const force = REPULSION_STRENGTH / (dist * dist);
+                    const fx = (dx / dist) * force;
+                    const fy = (dy / dist) * force;
+                    
+                    nodeA.vx += fx;
+                    nodeA.vy += fy;
+                    nodeB.vx -= fx;
+                    nodeB.vy -= fy;
+                }
+
+                // 2. Гравитация к центру (чтобы не улетали за экран)
+                const cx = canvas.width / 2;
+                const cy = canvas.height / 2;
+                nodeA.vx += (cx - nodeA.x) * CENTER_GRAVITY;
+                nodeA.vy += (cy - nodeA.y) * CENTER_GRAVITY;
+            }
+
+            // 3. Притяжение связанных узлов (пружины)
+            STATE.edges.forEach(edge => {
+                const nodeA = STATE.nodes[edge.u];
+                const nodeB = STATE.nodes[edge.v];
+                const dx = nodeB.x - nodeA.x;
+                const dy = nodeB.y - nodeA.y;
+                const dist = Math.sqrt(dx*dx + dy*dy);
+                
+                const force = (dist - SPRING_LENGTH) * SPRING_STRENGTH;
+                const fx = (dx / dist) * force;
+                const fy = (dy / dist) * force;
+
+                nodeA.vx += fx;
+                nodeA.vy += fy;
+                nodeB.vx -= fx;
+                nodeB.vy -= fy;
+            });
+
+            // 4. Применение скоростей и учет границ экрана
+            STATE.nodes.forEach(node => {
+                if (STATE.draggedNode === node.id) {
+                    node.vx = 0; node.vy = 0;
+                    return; 
+                }
+
+                node.vx *= DAMPING;
+                node.vy *= DAMPING;
+                node.x += node.vx;
+                node.y += node.vy;
+
+                // Отскок от границ
+                const padding = NODE_RADIUS + 10;
+                if (node.x < padding) { node.x = padding; node.vx *= -1; }
+                if (node.x > canvas.width - padding) { node.x = canvas.width - padding; node.vx *= -1; }
+                if (node.y < padding) { node.y = padding; node.vy *= -1; }
+                if (node.y > canvas.height - padding) { node.y = canvas.height - padding; node.vy *= -1; }
+            });
+        }
+
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            const timeNow = Date.now();
+            const pulseIntensity = (Math.sin(timeNow / 120) * 0.5) + 0.5;
+
+            // Отрисовка ребер (связей)
+            STATE.edges.forEach(edge => {
+                const nodeA = STATE.nodes[edge.u];
+                const nodeB = STATE.nodes[edge.v];
+                
+                // Проверка на конфликт
+                const isConflict = nodeA.color !== null && nodeB.color !== null && nodeA.color === nodeB.color;
+
+                ctx.beginPath();
+                ctx.moveTo(nodeA.x, nodeA.y);
+                ctx.lineTo(nodeB.x, nodeB.y);
+                
+                if (isConflict) {
+                    // Яркая красная пульсирующая линия при ошибке
+                    ctx.strokeStyle = `rgba(239, 68, 68, ${0.4 + pulseIntensity * 0.6})`; // text-red-500
+                    ctx.lineWidth = 6 + (pulseIntensity * 2);
+                    ctx.shadowBlur = 15;
+                    ctx.shadowColor = '#ef4444';
+                } else {
+                    // Обычная линия
+                    ctx.strokeStyle = 'rgba(148, 163, 184, 0.2)'; // text-slate-400 с прозрачностью
+                    ctx.lineWidth = 3;
+                    ctx.shadowBlur = 0;
+                }
+                ctx.stroke();
+            });
+
+            // Отрисовка узлов
+            STATE.nodes.forEach(node => {
+                ctx.beginPath();
+                ctx.arc(node.x, node.y, NODE_RADIUS, 0, Math.PI * 2);
+                
+                if (node.color) {
+                    // Закрашенный узел
+                    ctx.fillStyle = node.color;
+                    ctx.shadowBlur = 20;
+                    ctx.shadowColor = node.color;
+                    ctx.fill();
+                    
+                    // Темная сердцевина (дизайн кольца)
+                    ctx.beginPath();
+                    ctx.arc(node.x, node.y, NODE_RADIUS * 0.6, 0, Math.PI * 2);
+                    ctx.fillStyle = '#0f172a'; // Фон
+                    ctx.shadowBlur = 0;
+                    ctx.fill();
+                } else {
+                    // Пустой узел
+                    ctx.fillStyle = '#1e293b'; // slate-800
+                    ctx.shadowBlur = 10;
+                    ctx.shadowColor = '#000';
+                    ctx.fill();
+                }
+
+                // Контур
+                ctx.beginPath();
+                ctx.arc(node.x, node.y, NODE_RADIUS, 0, Math.PI * 2);
+                ctx.strokeStyle = node.color || '#475569'; // slate-600
+                ctx.lineWidth = 4;
+                ctx.stroke();
+                ctx.shadowBlur = 0; 
+            });
+        }
+
+        function getMousePos(evt) {
+            const rect = canvas.getBoundingClientRect();
+            const clientX = evt.touches ? evt.touches[0].clientX : evt.clientX;
+            const clientY = evt.touches ? evt.touches[0].clientY : evt.clientY;
+            return {
+                x: clientX - rect.left,
+                y: clientY - rect.top
+            };
+        }
+
+        function handleInputStart(evt) {
+            if (!STATE.isPlaying) return; 
+            
+            const pos = getMousePos(evt);
+            
+            for (let i = STATE.nodes.length - 1; i >= 0; i--) {
+                const node = STATE.nodes[i];
+                const dx = pos.x - node.x;
+                const dy = pos.y - node.y;
+                
+                // Проверяем попадание в радиус узла
+                if (dx*dx + dy*dy <= (NODE_RADIUS + 15)*(NODE_RADIUS + 15)) {
+                    STATE.draggedNode = node.id;
+                    
+                    // Закрашиваем, если цвет изменился
+                    if (node.color !== STATE.selectedColor) {
+                        node.color = STATE.selectedColor;
+                        STATE.clicks++;
+                        uiClicks.innerText = STATE.clicks;
+                        
+                        // АВТОМАТИЧЕСКАЯ ПРОВЕРКА ПОСЛЕ КЛИКА
+                        checkWinCondition();
+                    }
+                    break;
+                }
+            }
+        }
+
+        function handleInputMove(evt) {
+            if (STATE.draggedNode !== null) {
+                const pos = getMousePos(evt);
+                const node = STATE.nodes[STATE.draggedNode];
+                node.x = pos.x;
+                node.y = pos.y;
+            }
+        }
+
+        function handleInputEnd() {
+            STATE.draggedNode = null;
+        }
+
+        // Проверка условия победы
+        function checkWinCondition() {
+            // 1. Проверяем, все ли узлы закрашены
+            const allColored = STATE.nodes.every(node => node.color !== null);
+            if (!allColored) return; // Игра продолжается
+
+            // 2. Проверяем наличие конфликтов (соседние узлы одного цвета)
+            let hasConflict = false;
+            for (let i = 0; i < STATE.edges.length; i++) {
+                const edge = STATE.edges[i];
+                const c1 = STATE.nodes[edge.u].color;
+                const c2 = STATE.nodes[edge.v].color;
+                if (c1 === c2) {
+                    hasConflict = true;
+                    break;
+                }
+            }
+
+            if (hasConflict) return; // Ошибка есть, игра продолжается (линии станут красными)
+
+            // Если все закрашено и конфликтов нет - Победа!
+            levelComplete();
+        }
+
+        canvas.addEventListener('mousedown', handleInputStart);
+        canvas.addEventListener('mousemove', handleInputMove);
+        window.addEventListener('mouseup', handleInputEnd);
+
+        canvas.addEventListener('touchstart', (e) => { e.preventDefault(); handleInputStart(e); }, {passive: false});
+        canvas.addEventListener('touchmove', (e) => { e.preventDefault(); handleInputMove(e); }, {passive: false});
+        window.addEventListener('touchend', handleInputEnd);
+
+        function levelComplete() {
+            STATE.isPlaying = false; 
+            
+            // Расчет очков
+            const timeTaken = Math.floor((Date.now() - STATE.timeStart) / 1000);
+            
+            // Базовое время: 4 секунды на каждый узел
+            const expectedTime = STATE.nodes.length * 4;
+            let timeBonus = Math.max(0, (expectedTime - timeTaken) * 20);
+            
+            // Бонус за шаги (идеально - по 1 клику на узел)
+            const perfectClicks = STATE.nodes.length;
+            const extraClicks = Math.max(0, STATE.clicks - perfectClicks);
+            let efficiencyBonus = Math.max(0, 500 - (extraClicks * 20));
+
+            const levelScore = 1000 + timeBonus + efficiencyBonus;
+            STATE.score += levelScore;
+
+            // Обновляем статистику в модальном окне
+            document.getElementById('stat-time-bonus').innerText = `+${timeBonus}`;
+            document.getElementById('stat-click-bonus').innerText = `+${efficiencyBonus}`;
+            document.getElementById('stat-level-score').innerText = levelScore;
+            
+            uiScore.innerText = STATE.score;
+
+            // Показываем оверлей победы
+            successOverlay.classList.remove('hidden');
+            successOverlay.classList.add('flex');
+        }
+
+        btnNextLevel.addEventListener('click', () => {
+            // Скрываем оверлей
+            successOverlay.classList.remove('flex');
+            successOverlay.classList.add('hidden');
+            
+            STATE.level++;
+            startLevel(STATE.level);
+        });
+
+        function startLevel(level) {
+            uiLevel.innerText = level;
+            STATE.clicks = 0;
+            uiClicks.innerText = "0";
+            
+            resizeCanvas(); // Убеждаемся, что холст актуального размера
+            generateGraph(level);
+            
+            STATE.timeStart = Date.now();
+            STATE.isPlaying = true;
+        }
+
+        // Обновление таймера
+        function updateHUD() {
+            if (!STATE.isPlaying) return;
+            const elapsed = Math.floor((Date.now() - STATE.timeStart) / 1000);
+            const mins = String(Math.floor(elapsed / 60)).padStart(2, '0');
+            const secs = String(elapsed % 60).padStart(2, '0');
+            uiTime.innerText = `${mins}:${secs}`;
+        }
+
+        function gameLoop() {
+            if (STATE.isPlaying) {
+                 updatePhysics();
+            }
+            draw();
+            updateHUD();
+            requestAnimationFrame(gameLoop);
+        }
+
+        // Старт при загрузке
+        window.onload = () => {
+            setupPalette();
+            startLevel(STATE.level);
+            requestAnimationFrame(gameLoop);
+        };
+
+    </script>
+</body>
+</html>
